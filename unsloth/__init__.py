@@ -12,117 +12,80 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os, platform, importlib.util
+"""Unsloth - 2x faster LLM finetuning with 60% less memory."""
 
-os.environ["UNSLOTH_IS_PRESENT"] = "1"
+__version__ = "2024.12.4"
+__author__ = "Unsloth Team"
+__license__ = "Apache 2.0"
 
-# Detect Apple Silicon + MLX before any torch/numpy imports
-_IS_MLX = (
-    platform.system() == "Darwin"
-    and platform.machine() == "arm64"
-    and importlib.util.find_spec("mlx") is not None
-)
+import sys
+import os
 
-if _IS_MLX:
-    try:
-        import unsloth_zoo
-    except ImportError as _e:
-        raise ImportError(
-            "Unsloth: MLX support requires `unsloth-zoo` with MLX modules. "
-            "Reinstall with `pip install unsloth-zoo` or rerun install.sh."
-        ) from _e
-    # The mlx_trainer / mlx_loader submodules ship with unsloth-zoo's MLX
-    # support. An older installed unsloth-zoo (e.g. from PyPI before the
-    # MLX release lands) will satisfy `import unsloth_zoo` but be missing
-    # these submodules. Surface the same friendly install hint instead of
-    # a raw ImportError on the submodule path.
-    try:
-        from unsloth_zoo.mlx_trainer import MLXTrainer, MLXTrainingConfig
-        from unsloth_zoo.mlx_loader import FastMLXModel
-    except ImportError as _e:
-        raise ImportError(
-            "Unsloth: MLX support requires an unsloth-zoo build that includes "
-            "`unsloth_zoo.mlx_trainer` and `unsloth_zoo.mlx_loader`. Upgrade with "
-            "`pip install -U unsloth-zoo` or rerun install.sh."
-        ) from _e
-
-    # Load raw_text helpers without executing dataprep/__init__.py, which
-    # imports synthetic.py -> torch and would defeat the torch-free MLX path.
-    from pathlib import Path as _Path
-
-    _raw_text_path = _Path(__file__).resolve().parent / "dataprep" / "raw_text.py"
-    _raw_text_spec = importlib.util.spec_from_file_location(
-        "unsloth._mlx_raw_text", _raw_text_path
+# Minimum Python version check
+if sys.version_info < (3, 8):
+    raise RuntimeError(
+        "Unsloth requires Python 3.8 or higher. "
+        f"You are using Python {sys.version_info.major}.{sys.version_info.minor}."
     )
-    if _raw_text_spec is None or _raw_text_spec.loader is None:
-        raise ImportError("Unsloth: could not load MLX raw_text dataprep helpers.")
-    _raw_text = importlib.util.module_from_spec(_raw_text_spec)
-    _raw_text_spec.loader.exec_module(_raw_text)
-    RawTextDataLoader = _raw_text.RawTextDataLoader
-    TextPreprocessor = _raw_text.TextPreprocessor
-    del _raw_text, _raw_text_spec, _raw_text_path, _Path
 
-    __version__ = unsloth_zoo.__version__
-    DEVICE_TYPE = "mlx"
-
-    class FastLanguageModel:
-        @staticmethod
-        def from_pretrained(*args, **kwargs):
-            return FastMLXModel.from_pretrained(*args, **kwargs)
-
-        @staticmethod
-        def get_peft_model(*args, **kwargs):
-            return FastMLXModel.get_peft_model(*args, **kwargs)
-
-        @staticmethod
-        def for_inference(*args, **kwargs):
-            return args[0] if args else None
-
-    class FastVisionModel(FastLanguageModel):
-        @staticmethod
-        def from_pretrained(*args, **kwargs):
-            kwargs.setdefault("text_only", False)
-            return FastMLXModel.from_pretrained(*args, **kwargs)
-
-        @staticmethod
-        def for_training(*args, **kwargs):
-            return args[0] if args else None
-
-    FastTextModel = FastLanguageModel
-    FastModel = FastLanguageModel
-
-    class FastSentenceTransformer:
-        @staticmethod
-        def from_pretrained(*args, **kwargs):
-            raise NotImplementedError(
-                "Unsloth: FastSentenceTransformer is not yet supported on MLX."
+def _check_cuda_available():
+    """Check if CUDA is available and warn if not."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            import warnings
+            warnings.warn(
+                "CUDA is not available. Unsloth requires a CUDA-capable GPU for optimal performance. "
+                "Some features may not work correctly.",
+                RuntimeWarning,
+                stacklevel=3,
             )
+        return torch.cuda.is_available()
+    except ImportError:
+        raise ImportError(
+            "PyTorch is not installed. Please install it with: "
+            "pip install torch --index-url https://download.pytorch.org/whl/cu121"
+        )
 
-        @staticmethod
-        def get_peft_model(*args, **kwargs):
-            raise NotImplementedError(
-                "Unsloth: FastSentenceTransformer is not yet supported on MLX."
-            )
 
-    def is_bfloat16_supported():
+def _check_dependencies():
+    """Verify that required dependencies are installed."""
+    required = {
+        "transformers": "transformers",
+        "peft": "peft",
+        "trl": "trl",
+        "accelerate": "accelerate",
+        "bitsandbytes": "bitsandbytes",
+        "triton": "triton",
+    }
+    missing = []
+    for module_name, package_name in required.items():
         try:
-            import mlx.core as mx
+            __import__(module_name)
+        except ImportError:
+            missing.append(package_name)
 
-            name = mx.device_info().get("device_name", "") or ""
-            return not name.startswith(("Apple M1", "Apple M2"))
-        except Exception:
-            return True
+    if missing:
+        raise ImportError(
+            f"Missing required dependencies: {', '.join(missing)}. "
+            "Please install them with: pip install unsloth[cu121]"
+        )
 
-    is_bf16_supported = is_bfloat16_supported
 
-    class UnslothVisionDataCollator:
-        def __init__(self, *args, **kwargs):
-            raise NotImplementedError(
-                "Unsloth: UnslothVisionDataCollator is not used on MLX. "
-                "Use the MLX trainer/data path instead."
-            )
+# Run dependency checks on import
+_check_dependencies()
+_check_cuda_available()
 
-else:
-    # GPU path: load everything from _gpu_init
-    from ._gpu_init import *
-    from ._gpu_init import __version__
+# Core public API imports
+from .models import FastLanguageModel
+from .trainer import UnslothTrainer, UnslothTrainingArguments
+from .save import save_model, push_to_hub_merged
+
+__all__ = [
+    "FastLanguageModel",
+    "UnslothTrainer",
+    "UnslothTrainingArguments",
+    "save_model",
+    "push_to_hub_merged",
+    "__version__",
+]
