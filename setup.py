@@ -26,7 +26,8 @@ INSTALL_REQUIRES = [
     "huggingface_hub>=0.20.0",
     "triton>=2.1.0",
     "einops>=0.7.0",
-    "xformers>=0.0.23",
+    # Removed xformers from core deps - it's optional and often causes install issues
+    # "xformers>=0.0.23",
 ]
 
 # Optional dependencies for extended functionality
@@ -47,6 +48,9 @@ EXTRAS_REQUIRE = {
     ],
     "bnb": [
         "bitsandbytes>=0.43.0",
+    ],
+    "xformers": [
+        "xformers>=0.0.23",
     ],
 }
 
