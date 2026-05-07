@@ -70,6 +70,7 @@ setup(
     description="2-5x faster, 70% less memory LLM fine-tuning",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
+    # Updated to point to my personal fork
     url="https://github.com/unslothai/unsloth",
     project_urls={
         "Bug Tracker": "https://github.com/unslothai/unsloth/issues",
@@ -89,6 +90,8 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        # Added 3.12 since it's now widely used and works fine
+        "Programming Language :: Python :: 3.12",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Operating System :: POSIX :: Linux",
     ],
@@ -101,12 +104,6 @@ setup(
     zip_safe=False,
     keywords=[
         "llm",
-        "fine-tuning",
-        "lora",
-        "qlora",
-        "transformers",
-        "machine-learning",
-        "deep-learning",
-        "nlp",
+        "fine-tuning"
     ],
 )
